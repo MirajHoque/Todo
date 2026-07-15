@@ -1,0 +1,24 @@
+# Secrets — NEVER commit these
+.env
+*.pem
+*.key
+
+# Build output
+bin/
+dist/
+todo-app
+
+# Go tooling
+vendor/
+*.test
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
