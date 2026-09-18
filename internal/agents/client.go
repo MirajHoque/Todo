@@ -45,6 +45,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/MirajHoque/todo-app/internal/agents/memory"
 	"github.com/MirajHoque/todo-app/internal/logger"
 )
 
@@ -58,8 +59,8 @@ const AnthropicVersion = "2023-06-01"
 
 // APIMessage maps to the Anthropic API messages array entry.
 type APIMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string OR []ContentBlock for tool results
+	Role    string `json:"role"`    //sender role user or assistant
+	Content any    `json:"content"` // (msg body) string or complex slice of content blocks|data with images etc
 }
 
 // ContentBlock is used when content is structured (tool use / tool result).
@@ -75,26 +76,26 @@ type ContentBlock struct {
 
 // Tool describes a function Claude can call.
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
+	Name        string         `json:"name"`        // function name the model uses to execute this tool.
+	Description string         `json:"description"` // Explanatory text telling the model when and how to use the tool.
 	InputSchema map[string]any `json:"input_schema"`
 }
 
 // APIRequest is the full body sent to the Anthropic messages endpoint.
 type APIRequest struct {
-	Model     string       `json:"model"`
+	Model     string       `json:"model"` // claude-3-5-sonnet-20241022
 	MaxTokens int          `json:"max_tokens"`
-	System    string       `json:"system,omitempty"`
-	Messages  []APIMessage `json:"messages"`
-	Tools     []Tool       `json:"tools,omitempty"`
+	System    string       `json:"system,omitempty"` // System instructions directing the model's tone or behavior.
+	Messages  []APIMessage `json:"messages"`         // sequence of conversation messages.
+	Tools     []Tool       `json:"tools,omitempty"`  // tools avaiable for the model to invoke
 }
 
 // APIResponse is the relevant part of the Anthropic response.
 type APIResponse struct {
 	ID         string         `json:"id"`
 	Type       string         `json:"type"`
-	Role       string         `json:"role"`
-	Content    []ContentBlock `json:"content"`
+	Role       string         `json:"role"`        // Role of the sender(assistant)
+	Content    []ContentBlock `json:"content"`     // Slice of generated content blocks (text responses, tool requests, etc.).
 	StopReason string         `json:"stop_reason"` // "end_turn" | "tool_use" | "max_tokens"
 	Usage      Usage          `json:"usage"`
 }
@@ -156,6 +157,7 @@ func NewClient(apiKey, model string, log *slog.Logger) *Client {
 //   - the agent name, action, and token usage on every call (for Grafana)
 //   - any errors with full context (for Loki alerting)
 func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*APIResponse, error) {
+	// Fallback & Set Up
 	req.Model = c.model
 	if req.MaxTokens == 0 {
 		req.MaxTokens = 1024
@@ -176,10 +178,12 @@ func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*A
 		return nil, fmt.Errorf("agent %s: build request: %w", agentName, err)
 	}
 
+	// Attach 3 mandatory header required by Antrophic
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.apiKey)
 	httpReq.Header.Set("anthropic-version", AnthropicVersion)
 
+	// Execution and Network Handling
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		log.Error("agent api call failed",
@@ -194,6 +198,7 @@ func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*A
 		return nil, fmt.Errorf("agent %s: read response: %w", agentName, err)
 	}
 
+	// Error Status Check
 	if resp.StatusCode != http.StatusOK {
 		log.Error("agent api error response",
 			slog.Int("http_status", resp.StatusCode),
@@ -202,6 +207,7 @@ func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*A
 		return nil, fmt.Errorf("agent %s: api returned %d: %s", agentName, resp.StatusCode, string(respBody))
 	}
 
+	// Unmarshing & Logging Success
 	var apiResp APIResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
 		return nil, fmt.Errorf("agent %s: unmarshal response: %w", agentName, err)
@@ -221,7 +227,7 @@ func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*A
 
 // MessagesToAPI converts our internal memory.Message slice to the format
 // the Anthropic API expects. Call this before every agent API call.
-func MessagesToAPI(msgs []Message) []APIMessage {
+func MessagesToAPI(msgs []memory.Message) []APIMessage {
 	out := make([]APIMessage, 0, len(msgs))
 	for _, m := range msgs {
 		out = append(out, APIMessage{
