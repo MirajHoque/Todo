@@ -64,20 +64,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── 5. Services ────────────────────────────────────────────────────────
-	// JWT service — creates and validates tokens
+	// ── 5. Services & repositories ─────────────────────────────────────────
 	jwtService := auth.NewService(cfg.JWTSecret, cfg.JWTExpiry)
-
-	// Agent memory manager — one memory store per (user, agent) pair
 	memoryManager := memory.NewManager(10)
-
-	// Repositories — database access per table
 	userRepo := db.NewUserRepository(database)
+	todoRepo := db.NewTodoRepository(database)
 
-	// Handlers — HTTP layer
+	// ── 6. Handlers ────────────────────────────────────────────────────────
 	authHandler := handlers.NewAuthHandler(userRepo, jwtService, memoryManager)
+	todoHandler := handlers.NewTodoHandler(todoRepo)
 
-	// ── 6. Router ──────────────────────────────────────────────────────────
+	// ── 7. Router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -92,22 +89,26 @@ func main() {
 	r.Get("/health/ready", handlers.NewHealthReady(database))
 
 	r.Route("/api/v1", func(r chi.Router) {
-
 		// Auth — public
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// Protected — JWT middleware runs first for every route in this group
+		// Protected — JWT required for everything below
 		r.Group(func(r chi.Router) {
 			r.Use(jwtService.Middleware)
 
+			// Auth
 			r.Post("/auth/logout", authHandler.Logout)
 
-			// Todo routes added in step 4
+			// Todos — all 4 CRUD routes
+			r.Post("/todos", todoHandler.Create)
+			r.Get("/todos", todoHandler.List)
+			r.Patch("/todos/{id}", todoHandler.Update)
+			r.Delete("/todos/{id}", todoHandler.Delete)
 		})
 	})
 
-	// ── 7. HTTP server with graceful shutdown ──────────────────────────────
+	// ── 8. HTTP server with graceful shutdown ──────────────────────────────
 	srv := &http.Server{
 		Addr:         cfg.Addr(),
 		Handler:      r,
