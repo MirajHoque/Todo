@@ -15,32 +15,32 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/MirajHoque/todo-app/internal/agents/memory"
+	"github.com/MirajHoque/todo-app/internal/auth"
 	"github.com/MirajHoque/todo-app/internal/config"
 	"github.com/MirajHoque/todo-app/internal/db"
 	"github.com/MirajHoque/todo-app/internal/handlers"
 	"github.com/MirajHoque/todo-app/internal/logger"
 	"github.com/MirajHoque/todo-app/internal/middleware"
-	// <pathOftheModule>/<packeageWantToImport>
+	// <pathOftheModule>/<packageWantToImport>
 )
 
 func main() {
-	// ── 1. Config ────────────────────────────────────────────────────────────
+	// ── 1. Config ─────────────────────────────────────────────────────────
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
-	// ── 2. Logger ────────────────────────────────────────────────────────────
+	// ── 2. Logger ──────────────────────────────────────────────────────────
 	log := logger.New(cfg.LogFormat, cfg.LogLevel, cfg.Env)
-
 	log.Info("starting todo-app",
 		slog.String("env", cfg.Env),
 		slog.String("addr", cfg.Addr()),
 	)
 
-	// ── 3. Database ──────────────────────────────────────────────────────────
-	// Use a background context for startup — not tied to any request.
+	// ── 3. Database ────────────────────────────────────────────────────────
 	ctx := context.Background()
 
 	database, err := db.Connect(ctx, cfg, log)
@@ -52,9 +52,7 @@ func main() {
 	}
 	defer database.Close()
 
-	// ── 4. Migrations ────────────────────────────────────────────────────────
-	// Find the migrations/ directory relative to this source file.
-	// This works whether you run with go run or a compiled binary.
+	// ── 4. Migrations ──────────────────────────────────────────────────────
 	_, filename, _, _ := runtime.Caller(0)
 	projectRoot := filepath.Join(filepath.Dir(filename), "..", "..")
 	migrationsDir := filepath.Join(projectRoot, "migrations")
@@ -66,9 +64,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── 5. Router + middleware ────────────────────────────────────────────────
+	// ── 5. Services ────────────────────────────────────────────────────────
+	// JWT service — creates and validates tokens
+	jwtService := auth.NewService(cfg.JWTSecret, cfg.JWTExpiry)
+
+	// Agent memory manager — one memory store per (user, agent) pair
+	memoryManager := memory.NewManager(10)
+
+	// Repositories — database access per table
+	userRepo := db.NewUserRepository(database)
+
+	// Handlers — HTTP layer
+	authHandler := handlers.NewAuthHandler(userRepo, jwtService, memoryManager)
+
+	// ── 6. Router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
+	// Global middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.Recoverer)
@@ -79,16 +91,23 @@ func main() {
 	r.Get("/health", handlers.Health)
 	r.Get("/health/ready", handlers.NewHealthReady(database))
 
-	// API v1
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-			log := logger.FromContext(r.Context())
-			log.Info("ping called")
-			w.Write([]byte(`{"message":"pong"}`))
+
+		// Auth — public
+		r.Post("/auth/register", authHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
+
+		// Protected — JWT middleware runs first for every route in this group
+		r.Group(func(r chi.Router) {
+			r.Use(jwtService.Middleware)
+
+			r.Post("/auth/logout", authHandler.Logout)
+
+			// Todo routes added in step 4
 		})
 	})
 
-	// ── 6. HTTP server with graceful shutdown ────────────────────────────────
+	// ── 7. HTTP server with graceful shutdown ──────────────────────────────
 	srv := &http.Server{
 		Addr:         cfg.Addr(),
 		Handler:      r,
