@@ -73,6 +73,7 @@ func main() {
 	// ── 6. Handlers ────────────────────────────────────────────────────────
 	authHandler := handlers.NewAuthHandler(userRepo, jwtService, memoryManager)
 	todoHandler := handlers.NewTodoHandler(todoRepo)
+	pageHandler := handlers.NewPageHandler()
 
 	// ── 7. Router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -84,23 +85,28 @@ func main() {
 	r.Use(middleware.RequestLog)
 	r.Use(chimiddleware.StripSlashes)
 
-	// Public routes
+	// ── HTML pages ─────────────────────────────────────────────────────────
+	r.Get("/", pageHandler.LoginPage)
+	r.Get("/register", pageHandler.RegisterPage)
+	r.Get("/todos", pageHandler.TodosPage)
+
+	// ── Health ─────────────────────────────────────────────────────────────
 	r.Get("/health", handlers.Health)
 	r.Get("/health/ready", handlers.NewHealthReady(database))
 
+	// ── API ────────────────────────────────────────────────────────────────
 	r.Route("/api/v1", func(r chi.Router) {
-		// Auth — public
+
+		// Public
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// Protected — JWT required for everything below
+		// Protected — JWT required
 		r.Group(func(r chi.Router) {
 			r.Use(jwtService.Middleware)
 
-			// Auth
 			r.Post("/auth/logout", authHandler.Logout)
 
-			// Todos — all 4 CRUD routes
 			r.Post("/todos", todoHandler.Create)
 			r.Get("/todos", todoHandler.List)
 			r.Patch("/todos/{id}", todoHandler.Update)

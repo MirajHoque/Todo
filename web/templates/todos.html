@@ -1,0 +1,267 @@
+{{template "base.html" .}}
+
+{{define "title"}}My Todos{{end}}
+
+{{define "nav"}}
+<span id="user-email" style="font-size:13px;color:#555;"></span>
+<button class="nav-btn" onclick="logout()">Logout</button>
+{{end}}
+
+{{define "content"}}
+<!-- Add todo form -->
+<div class="card">
+    <h1>My Todos</h1>
+
+    <div class="alert alert-error"  id="error-msg"></div>
+    <div class="alert alert-success" id="success-msg"></div>
+
+    <div style="display:flex;gap:10px;margin-bottom:8px;">
+        <div style="flex:1;">
+            <input type="text" id="new-title" placeholder="What needs to be done?" maxlength="255">
+        </div>
+        <select id="new-priority" style="width:110px;">
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+        </select>
+        <button class="btn" style="width:auto;padding:9px 18px;" onclick="createTodo()">Add</button>
+    </div>
+</div>
+
+<!-- Todo list -->
+<div id="todo-list">
+    <!-- filled by loadTodos() -->
+</div>
+
+<!-- Empty state -->
+<div id="empty-state" style="display:none;text-align:center;padding:48px 0;color:#888;">
+    <div style="font-size:40px;margin-bottom:12px;">✓</div>
+    <div style="font-size:16px;font-weight:500;margin-bottom:6px;">All clear!</div>
+    <div style="font-size:13px;">Add your first todo above</div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<style>
+    .todo-item {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: opacity 0.2s;
+    }
+    .todo-item.done { opacity: 0.5; }
+
+    .todo-check {
+        width: 20px; height: 20px;
+        border: 2px solid #d5d5d5;
+        border-radius: 50%;
+        cursor: pointer;
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.15s;
+    }
+    .todo-check.checked { background: #2563eb; border-color: #2563eb; color: #fff; font-size: 11px; }
+    .todo-check:hover { border-color: #2563eb; }
+
+    .todo-title {
+        flex: 1;
+        font-size: 14px;
+        color: #1a1a1a;
+    }
+    .todo-item.done .todo-title { text-decoration: line-through; color: #999; }
+
+    .priority-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 20px;
+        font-weight: 500;
+        flex-shrink: 0;
+    }
+    .priority-high   { background: #fef2f2; color: #dc2626; }
+    .priority-medium { background: #fff7ed; color: #ea580c; }
+    .priority-low    { background: #f0fdf4; color: #16a34a; }
+</style>
+
+<script>
+    const token = localStorage.getItem('token');
+
+    // If not logged in, redirect to login page
+    if (!token) {
+        window.location.href = '/';
+    }
+
+    // Show email in nav
+    const email = localStorage.getItem('user_email');
+    if (email) document.getElementById('user-email').textContent = email;
+
+    // ── Load todos on page load ───────────────────────────────────────────
+    async function loadTodos() {
+        try {
+            const res = await fetch('/api/v1/todos', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.status === 401) {
+                // Token expired — send to login
+                logout();
+                return;
+            }
+
+            const todos = await res.json();
+            renderTodos(todos);
+
+        } catch (err) {
+            showError('Failed to load todos');
+        }
+    }
+
+    // ── Render todos into the DOM ─────────────────────────────────────────
+    function renderTodos(todos) {
+        const list = document.getElementById('todo-list');
+        const empty = document.getElementById('empty-state');
+
+        if (!todos || todos.length === 0) {
+            list.innerHTML = '';
+            empty.style.display = 'block';
+            return;
+        }
+
+        empty.style.display = 'none';
+        list.innerHTML = todos.map(todo => `
+            <div class="todo-item ${todo.done ? 'done' : ''}" id="todo-${todo.id}">
+                <div class="todo-check ${todo.done ? 'checked' : ''}"
+                     onclick="toggleDone('${todo.id}', ${todo.done})">
+                    ${todo.done ? '✓' : ''}
+                </div>
+                <span class="todo-title">${escapeHtml(todo.title)}</span>
+                <span class="priority-badge priority-${todo.priority}">${todo.priority}</span>
+                <button class="btn-danger" onclick="deleteTodo('${todo.id}')">✕</button>
+            </div>
+        `).join('');
+    }
+
+    // ── Create a new todo ─────────────────────────────────────────────────
+    async function createTodo() {
+        const title    = document.getElementById('new-title').value.trim();
+        const priority = document.getElementById('new-priority').value;
+
+        if (!title) {
+            showError('Title is required');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/v1/todos', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ title, priority })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                showError(data.error || 'Failed to create todo');
+                return;
+            }
+
+            // Clear the input and reload
+            document.getElementById('new-title').value = '';
+            document.getElementById('new-priority').value = 'medium';
+            await loadTodos();
+
+        } catch (err) {
+            showError('Network error');
+        }
+    }
+
+    // ── Toggle done / undone ──────────────────────────────────────────────
+    async function toggleDone(id, currentDone) {
+        try {
+            const res = await fetch('/api/v1/todos/' + id, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ done: !currentDone })
+            });
+
+            if (!res.ok) {
+                showError('Failed to update todo');
+                return;
+            }
+
+            await loadTodos();
+
+        } catch (err) {
+            showError('Network error');
+        }
+    }
+
+    // ── Delete a todo ─────────────────────────────────────────────────────
+    async function deleteTodo(id) {
+        try {
+            const res = await fetch('/api/v1/todos/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (res.status === 204 || res.ok) {
+                await loadTodos();
+            } else {
+                showError('Failed to delete todo');
+            }
+
+        } catch (err) {
+            showError('Network error');
+        }
+    }
+
+    // ── Logout ────────────────────────────────────────────────────────────
+    async function logout() {
+        try {
+            await fetch('/api/v1/auth/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+        } catch (_) {}
+
+        localStorage.removeItem('token');
+        localStorage.removeItem('user_email');
+        window.location.href = '/';
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function showError(msg) {
+        const el = document.getElementById('error-msg');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
+    }
+
+    // Prevent XSS — escape user content before putting it in the DOM
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // Allow pressing Enter to add a todo
+    document.getElementById('new-title').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') createTodo();
+    });
+
+    // Load todos immediately
+    loadTodos();
+</script>
+{{end}}

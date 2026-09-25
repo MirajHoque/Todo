@@ -1,0 +1,100 @@
+{{template "base.html" .}}
+
+{{define "title"}}Login — Todo App{{end}}
+
+{{define "nav"}}
+<a href="/register">Register</a>
+{{end}}
+
+{{define "content"}}
+<div class="card">
+    <h1>Welcome back</h1>
+
+    <div class="alert alert-error" id="error-msg"></div>
+
+    <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+    </div>
+
+    <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Your password" autocomplete="current-password">
+    </div>
+
+    <button class="btn" id="login-btn" onclick="login()">Login</button>
+
+    <div class="text-link">
+        Don't have an account? <a href="/register">Register</a>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // If already logged in, go straight to todos
+    if (localStorage.getItem('token')) {
+        window.location.href = '/todos';
+    }
+
+    // Allow pressing Enter to submit
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') login();
+    });
+
+    async function login() {
+        const email    = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const btn      = document.getElementById('login-btn');
+        const errorEl  = document.getElementById('error-msg');
+
+        // Clear previous error
+        errorEl.classList.remove('show');
+
+        // Basic client-side validation
+        if (!email || !password) {
+            showError('Email and password are required');
+            return;
+        }
+
+        // Show loading state
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Logging in...';
+
+        try {
+            const res = await fetch('/api/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                showError(data.error || 'Login failed');
+                return;
+            }
+
+            // Store JWT token in localStorage
+            // The todo page reads this and sends it on every API call
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user_email', data.user.email);
+
+            // Redirect to todo list
+            window.location.href = '/todos';
+
+        } catch (err) {
+            showError('Network error — please try again');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Login';
+        }
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('error-msg');
+        el.textContent = msg;
+        el.classList.add('show');
+    }
+</script>
+{{end}}
