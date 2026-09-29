@@ -15,7 +15,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/MirajHoque/todo-app/internal/agents/memory"
+	"github.com/MirajHoque/todo-app/internal/agents"
+	agentmemory "github.com/MirajHoque/todo-app/internal/agents/memory"
 	"github.com/MirajHoque/todo-app/internal/auth"
 	"github.com/MirajHoque/todo-app/internal/config"
 	"github.com/MirajHoque/todo-app/internal/db"
@@ -66,55 +67,63 @@ func main() {
 
 	// ── 5. Services & repositories ─────────────────────────────────────────
 	jwtService := auth.NewService(cfg.JWTSecret, cfg.JWTExpiry)
-	memoryManager := memory.NewManager(10)
+	memoryManager := agentmemory.NewManager(10)
 	userRepo := db.NewUserRepository(database)
 	todoRepo := db.NewTodoRepository(database)
 
-	// ── 6. Handlers ────────────────────────────────────────────────────────
+	// ── 6. Agents ──────────────────────────────────────────────────────────
+	agentClient := agents.NewClient(cfg.OpenRouterAPIKey, cfg.AgentModel, log)
+	orchestrator := agents.NewOrchestrator(agentClient, memoryManager, todoRepo)
+
+	// ── 7. Handlers ────────────────────────────────────────────────────────
 	authHandler := handlers.NewAuthHandler(userRepo, jwtService, memoryManager)
 	todoHandler := handlers.NewTodoHandler(todoRepo)
 	pageHandler := handlers.NewPageHandler()
+	agentHandler := handlers.NewAgentHandler(orchestrator)
 
-	// ── 7. Router ──────────────────────────────────────────────────────────
+	// ── 8. Router ──────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
-	// Global middleware
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestLog)
 	r.Use(chimiddleware.StripSlashes)
 
-	// ── HTML pages ─────────────────────────────────────────────────────────
+	// HTML pages
 	r.Get("/", pageHandler.LoginPage)
 	r.Get("/register", pageHandler.RegisterPage)
 	r.Get("/todos", pageHandler.TodosPage)
 
-	// ── Health ─────────────────────────────────────────────────────────────
+	// Health
 	r.Get("/health", handlers.Health)
 	r.Get("/health/ready", handlers.NewHealthReady(database))
 
-	// ── API ────────────────────────────────────────────────────────────────
+	// API
 	r.Route("/api/v1", func(r chi.Router) {
-
 		// Public
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// Protected — JWT required
+		// Protected
 		r.Group(func(r chi.Router) {
 			r.Use(jwtService.Middleware)
 
+			// Auth
 			r.Post("/auth/logout", authHandler.Logout)
 
+			// Todos
 			r.Post("/todos", todoHandler.Create)
 			r.Get("/todos", todoHandler.List)
 			r.Patch("/todos/{id}", todoHandler.Update)
 			r.Delete("/todos/{id}", todoHandler.Delete)
+
+			// Agent chat — new in step 6
+			r.Post("/agent/chat", agentHandler.Chat)
 		})
 	})
 
-	// ── 8. HTTP server with graceful shutdown ──────────────────────────────
+	// ── 9. HTTP server with graceful shutdown ──────────────────────────────
 	srv := &http.Server{
 		Addr:         cfg.Addr(),
 		Handler:      r,

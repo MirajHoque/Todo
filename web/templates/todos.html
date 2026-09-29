@@ -12,7 +12,7 @@
 <div class="card">
     <h1>My Todos</h1>
 
-    <div class="alert alert-error"  id="error-msg"></div>
+    <div class="alert alert-error"   id="error-msg"></div>
     <div class="alert alert-success" id="success-msg"></div>
 
     <div style="display:flex;gap:10px;margin-bottom:8px;">
@@ -29,239 +29,293 @@
 </div>
 
 <!-- Todo list -->
-<div id="todo-list">
-    <!-- filled by loadTodos() -->
-</div>
+<div id="todo-list"></div>
 
 <!-- Empty state -->
-<div id="empty-state" style="display:none;text-align:center;padding:48px 0;color:#888;">
-    <div style="font-size:40px;margin-bottom:12px;">✓</div>
-    <div style="font-size:16px;font-weight:500;margin-bottom:6px;">All clear!</div>
-    <div style="font-size:13px;">Add your first todo above</div>
+<div id="empty-state" style="display:none;text-align:center;padding:32px 0;color:#888;">
+    <div style="font-size:36px;margin-bottom:10px;">✓</div>
+    <div style="font-size:15px;font-weight:500;margin-bottom:4px;">All clear!</div>
+    <div style="font-size:13px;">Add your first todo above or chat with the assistant below</div>
+</div>
+
+<!-- AI Chat box -->
+<div class="card" style="margin-top:24px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <span style="font-size:18px;">🤖</span>
+        <h2 style="font-size:15px;font-weight:600;margin:0;">AI Assistant</h2>
+        <span style="font-size:12px;color:#888;margin-left:4px;">Ask me to manage your todos</span>
+    </div>
+
+    <!-- Chat messages -->
+    <div id="chat-messages" style="
+        min-height:120px;
+        max-height:320px;
+        overflow-y:auto;
+        margin-bottom:12px;
+        display:flex;
+        flex-direction:column;
+        gap:10px;
+    ">
+        <!-- Welcome message -->
+        <div class="chat-msg agent-bubble">
+            Hi! I can help you manage your todos. Try saying:<br>
+            <em>"add buy milk with high priority"</em> or <em>"what do I still need to do?"</em>
+        </div>
+    </div>
+
+    <!-- Chat input -->
+    <div style="display:flex;gap:8px;">
+        <input type="text"
+               id="chat-input"
+               placeholder="Ask me anything about your todos..."
+               style="flex:1;"
+               onkeydown="if(event.key==='Enter') sendChat()">
+        <button class="btn" style="width:auto;padding:9px 18px;" onclick="sendChat()" id="chat-btn">
+            Send
+        </button>
+    </div>
 </div>
 {{end}}
 
 {{define "scripts"}}
 <style>
+    /* ── Todo items ─────────────────────────────────── */
     .todo-item {
-        background: #fff;
-        border: 1px solid #e5e5e5;
-        border-radius: 10px;
-        padding: 14px 16px;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        transition: opacity 0.2s;
+        background:#fff;border:1px solid #e5e5e5;border-radius:10px;
+        padding:14px 16px;margin-bottom:8px;
+        display:flex;align-items:center;gap:12px;transition:opacity 0.2s;
     }
-    .todo-item.done { opacity: 0.5; }
+    .todo-item.done{opacity:.5}
+    .todo-check{
+        width:20px;height:20px;border:2px solid #d5d5d5;border-radius:50%;
+        cursor:pointer;flex-shrink:0;display:flex;align-items:center;
+        justify-content:center;transition:all 0.15s;
+    }
+    .todo-check.checked{background:#2563eb;border-color:#2563eb;color:#fff;font-size:11px}
+    .todo-check:hover{border-color:#2563eb}
+    .todo-title{flex:1;font-size:14px;color:#1a1a1a}
+    .todo-item.done .todo-title{text-decoration:line-through;color:#999}
+    .priority-badge{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;flex-shrink:0}
+    .priority-high  {background:#fef2f2;color:#dc2626}
+    .priority-medium{background:#fff7ed;color:#ea580c}
+    .priority-low   {background:#f0fdf4;color:#16a34a}
 
-    .todo-check {
-        width: 20px; height: 20px;
-        border: 2px solid #d5d5d5;
-        border-radius: 50%;
-        cursor: pointer;
-        flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
-        transition: all 0.15s;
+    /* ── Chat bubbles ───────────────────────────────── */
+    .chat-msg{font-size:13px;line-height:1.6;padding:10px 14px;border-radius:12px;max-width:85%}
+    .user-bubble{
+        background:#2563eb;color:#fff;
+        border-radius:12px 12px 2px 12px;
+        align-self:flex-end;
     }
-    .todo-check.checked { background: #2563eb; border-color: #2563eb; color: #fff; font-size: 11px; }
-    .todo-check:hover { border-color: #2563eb; }
-
-    .todo-title {
-        flex: 1;
-        font-size: 14px;
-        color: #1a1a1a;
+    .agent-bubble{
+        background:#f3f4f6;color:#1a1a1a;
+        border-radius:12px 12px 12px 2px;
+        align-self:flex-start;
     }
-    .todo-item.done .todo-title { text-decoration: line-through; color: #999; }
-
-    .priority-badge {
-        font-size: 11px;
-        padding: 2px 8px;
-        border-radius: 20px;
-        font-weight: 500;
-        flex-shrink: 0;
+    .typing-bubble{
+        background:#f3f4f6;color:#888;
+        border-radius:12px 12px 12px 2px;
+        align-self:flex-start;
+        font-style:italic;
     }
-    .priority-high   { background: #fef2f2; color: #dc2626; }
-    .priority-medium { background: #fff7ed; color: #ea580c; }
-    .priority-low    { background: #f0fdf4; color: #16a34a; }
 </style>
 
 <script>
-    const token = localStorage.getItem('token');
+const token = localStorage.getItem('token');
+if (!token) window.location.href = '/';
 
-    // If not logged in, redirect to login page
-    if (!token) {
-        window.location.href = '/';
+const email = localStorage.getItem('user_email');
+if (email) document.getElementById('user-email').textContent = email;
+
+// ── Todo functions ────────────────────────────────────────────────────────────
+
+async function loadTodos() {
+    try {
+        const res = await fetch('/api/v1/todos', {
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        if (res.status === 401) { logout(); return; }
+        const todos = await res.json();
+        renderTodos(todos);
+    } catch (err) {
+        showError('Failed to load todos');
+    }
+}
+
+function renderTodos(todos) {
+    const list  = document.getElementById('todo-list');
+    const empty = document.getElementById('empty-state');
+
+    if (!todos || todos.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
     }
 
-    // Show email in nav
-    const email = localStorage.getItem('user_email');
-    if (email) document.getElementById('user-email').textContent = email;
-
-    // ── Load todos on page load ───────────────────────────────────────────
-    async function loadTodos() {
-        try {
-            const res = await fetch('/api/v1/todos', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-
-            if (res.status === 401) {
-                // Token expired — send to login
-                logout();
-                return;
-            }
-
-            const todos = await res.json();
-            renderTodos(todos);
-
-        } catch (err) {
-            showError('Failed to load todos');
-        }
-    }
-
-    // ── Render todos into the DOM ─────────────────────────────────────────
-    function renderTodos(todos) {
-        const list = document.getElementById('todo-list');
-        const empty = document.getElementById('empty-state');
-
-        if (!todos || todos.length === 0) {
-            list.innerHTML = '';
-            empty.style.display = 'block';
-            return;
-        }
-
-        empty.style.display = 'none';
-        list.innerHTML = todos.map(todo => `
-            <div class="todo-item ${todo.done ? 'done' : ''}" id="todo-${todo.id}">
-                <div class="todo-check ${todo.done ? 'checked' : ''}"
-                     onclick="toggleDone('${todo.id}', ${todo.done})">
-                    ${todo.done ? '✓' : ''}
-                </div>
-                <span class="todo-title">${escapeHtml(todo.title)}</span>
-                <span class="priority-badge priority-${todo.priority}">${todo.priority}</span>
-                <button class="btn-danger" onclick="deleteTodo('${todo.id}')">✕</button>
+    empty.style.display = 'none';
+    list.innerHTML = todos.map(todo => `
+        <div class="todo-item ${todo.done ? 'done' : ''}" id="todo-${todo.id}">
+            <div class="todo-check ${todo.done ? 'checked' : ''}"
+                 onclick="toggleDone('${todo.id}', ${todo.done})">
+                ${todo.done ? '✓' : ''}
             </div>
-        `).join('');
-    }
+            <span class="todo-title">${escapeHtml(todo.title)}</span>
+            <span class="priority-badge priority-${todo.priority}">${todo.priority}</span>
+            <button class="btn-danger" onclick="deleteTodo('${todo.id}')">✕</button>
+        </div>
+    `).join('');
+}
 
-    // ── Create a new todo ─────────────────────────────────────────────────
-    async function createTodo() {
-        const title    = document.getElementById('new-title').value.trim();
-        const priority = document.getElementById('new-priority').value;
+async function createTodo() {
+    const title    = document.getElementById('new-title').value.trim();
+    const priority = document.getElementById('new-priority').value;
+    if (!title) { showError('Title is required'); return; }
 
-        if (!title) {
-            showError('Title is required');
+    try {
+        const res = await fetch('/api/v1/todos', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body: JSON.stringify({title, priority})
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || 'Failed to create todo'); return; }
+        document.getElementById('new-title').value = '';
+        document.getElementById('new-priority').value = 'medium';
+        await loadTodos();
+    } catch (err) { showError('Network error'); }
+}
+
+async function toggleDone(id, currentDone) {
+    try {
+        const res = await fetch('/api/v1/todos/' + id, {
+            method: 'PATCH',
+            headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+            body: JSON.stringify({done: !currentDone})
+        });
+        if (!res.ok) { showError('Failed to update todo'); return; }
+        await loadTodos();
+    } catch (err) { showError('Network error'); }
+}
+
+async function deleteTodo(id) {
+    try {
+        const res = await fetch('/api/v1/todos/' + id, {
+            method: 'DELETE',
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        if (res.status === 204 || res.ok) await loadTodos();
+        else showError('Failed to delete todo');
+    } catch (err) { showError('Network error'); }
+}
+
+async function logout() {
+    try {
+        await fetch('/api/v1/auth/logout', {
+            method: 'POST',
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+    } catch (_) {}
+    localStorage.removeItem('token');
+    localStorage.removeItem('user_email');
+    window.location.href = '/';
+}
+
+// ── Chat functions ────────────────────────────────────────────────────────────
+
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const btn   = document.getElementById('chat-btn');
+    const msg   = input.value.trim();
+    if (!msg) return;
+
+    // Show user message
+    appendChatMessage(msg, 'user');
+    input.value = '';
+    btn.disabled = true;
+
+    // Show typing indicator
+    const typingId = appendTyping();
+
+    try {
+        const res = await fetch('/api/v1/agent/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({message: msg})
+        });
+
+        removeTyping(typingId);
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            appendChatMessage(data.error || 'Something went wrong', 'agent');
             return;
         }
 
-        try {
-            const res = await fetch('/api/v1/todos', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({ title, priority })
-            });
+        // Show agent reply
+        appendChatMessage(data.reply, 'agent');
 
-            const data = await res.json();
+        // Reload todo list — agent may have changed it
+        await loadTodos();
 
-            if (!res.ok) {
-                showError(data.error || 'Failed to create todo');
-                return;
-            }
-
-            // Clear the input and reload
-            document.getElementById('new-title').value = '';
-            document.getElementById('new-priority').value = 'medium';
-            await loadTodos();
-
-        } catch (err) {
-            showError('Network error');
-        }
+    } catch (err) {
+        removeTyping(typingId);
+        appendChatMessage('Network error — please try again', 'agent');
+    } finally {
+        btn.disabled = false;
+        input.focus();
     }
+}
 
-    // ── Toggle done / undone ──────────────────────────────────────────────
-    async function toggleDone(id, currentDone) {
-        try {
-            const res = await fetch('/api/v1/todos/' + id, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({ done: !currentDone })
-            });
+function appendChatMessage(text, role) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + (role === 'user' ? 'user-bubble' : 'agent-bubble');
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div.id;
+}
 
-            if (!res.ok) {
-                showError('Failed to update todo');
-                return;
-            }
+function appendTyping() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    const id  = 'typing-' + Date.now();
+    div.id = id;
+    div.className = 'chat-msg typing-bubble';
+    div.textContent = 'Thinking...';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return id;
+}
 
-            await loadTodos();
+function removeTyping(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
 
-        } catch (err) {
-            showError('Network error');
-        }
-    }
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-    // ── Delete a todo ─────────────────────────────────────────────────────
-    async function deleteTodo(id) {
-        try {
-            const res = await fetch('/api/v1/todos/' + id, {
-                method: 'DELETE',
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
+function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 4000);
+}
 
-            if (res.status === 204 || res.ok) {
-                await loadTodos();
-            } else {
-                showError('Failed to delete todo');
-            }
+function escapeHtml(str) {
+    return str
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-        } catch (err) {
-            showError('Network error');
-        }
-    }
+document.getElementById('new-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createTodo();
+});
 
-    // ── Logout ────────────────────────────────────────────────────────────
-    async function logout() {
-        try {
-            await fetch('/api/v1/auth/logout', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-        } catch (_) {}
-
-        localStorage.removeItem('token');
-        localStorage.removeItem('user_email');
-        window.location.href = '/';
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
-    function showError(msg) {
-        const el = document.getElementById('error-msg');
-        el.textContent = msg;
-        el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 4000);
-    }
-
-    // Prevent XSS — escape user content before putting it in the DOM
-    function escapeHtml(str) {
-        return str
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
-
-    // Allow pressing Enter to add a todo
-    document.getElementById('new-title').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') createTodo();
-    });
-
-    // Load todos immediately
-    loadTodos();
+loadTodos();
 </script>
 {{end}}

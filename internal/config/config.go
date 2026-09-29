@@ -32,9 +32,9 @@ type Config struct {
 	JWTExpiry  time.Duration
 	BCryptCost int
 
-	// Anthropic (for agents)
-	AnthropicAPIKey string
-	AgentModel      string
+	// openrouter (for agents)
+	OpenRouterAPIKey string
+	AgentModel       string
 
 	// Logging
 	LogLevel  string // "debug" | "info" | "warn" | "error"
@@ -65,9 +65,9 @@ func Load() (*Config, error) {
 		JWTExpiry:  getDuration("JWT_EXPIRY", 24*time.Hour),
 		BCryptCost: getInt("BCRYPT_COST", 12),
 
-		// Anthropic
-		AnthropicAPIKey: requireEnv("ANTHROPIC_API_KEY"),
-		AgentModel:      getEnv("AGENT_MODEL", "claude-sonnet-4-20250514"),
+		// openrouter
+		OpenRouterAPIKey: requireEnv("OPENROUTER_API_KEY"),
+		AgentModel:       getEnv("AGENT_MODEL", "claude-sonnet-4-20250514"),
 
 		// Logging
 		LogLevel:  getEnv("LOG_LEVEL", "info"),

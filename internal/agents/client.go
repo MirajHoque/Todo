@@ -49,11 +49,8 @@ import (
 	"github.com/MirajHoque/todo-app/internal/logger"
 )
 
-// AnthropicBaseURL is the endpoint for Claude messages.
-const AnthropicBaseURL = "https://api.anthropic.com/v1/messages"
-
-// AnthropicVersion is the API version header value required by Anthropic.
-const AnthropicVersion = "2023-06-01"
+// OpenRouterBaseURL is the endpoint for messages.
+const OpenRouterBaseURL = "https://openrouter.ai/api/v1/messages"
 
 // ---- API types (minimal — only what we need) --------------------------------
 
@@ -66,6 +63,10 @@ type APIMessage struct {
 // ContentBlock is used when content is structured (tool use / tool result).
 type ContentBlock struct {
 	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`      // text blocks
+	Thinking  *string         `json:"thinking,omitempty"`  // thinking blocks; pointer so an empty "" is still sent back
+	Signature string          `json:"signature,omitempty"` // thinking blocks
+	Data      string          `json:"data,omitempty"`      // redacted_thinking blocks
 	ID        string          `json:"id,omitempty"`
 	Name      string          `json:"name,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
@@ -111,7 +112,7 @@ func (r *APIResponse) TextContent() string {
 	var buf bytes.Buffer
 	for _, block := range r.Content {
 		if block.Type == "text" {
-			buf.WriteString(block.Content)
+			buf.WriteString(block.Text)
 		}
 	}
 	return buf.String()
@@ -173,15 +174,16 @@ func (c *Client) Call(ctx context.Context, agentName string, req APIRequest) (*A
 		return nil, fmt.Errorf("agent %s: marshal request: %w", agentName, err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, AnthropicBaseURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, OpenRouterBaseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("agent %s: build request: %w", agentName, err)
 	}
 
-	// Attach 3 mandatory header required by Antrophic
+	// Attach mandatory header required
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", c.apiKey)
-	httpReq.Header.Set("anthropic-version", AnthropicVersion)
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("HTTP-Referer", "http://localhost:8080")
+	httpReq.Header.Set("X-Title", "Todo App")
 
 	// Execution and Network Handling
 	resp, err := c.httpClient.Do(httpReq)
