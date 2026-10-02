@@ -19,7 +19,7 @@ import (
 
 // AgentHandler handles chat messages routed through the orchestrator.
 type AgentHandler struct {
-	orchestrator *agents.Orchestrator
+	orchestrator *agents.Orchestrator // Name and Type
 }
 
 // NewAgentHandler creates an AgentHandler.
